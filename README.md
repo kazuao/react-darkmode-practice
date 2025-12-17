@@ -1,114 +1,77 @@
-# React + TypeScript + Vite + Tailwind CSS v4 Boilerplate
+# Dark Mode Best Practices
+##　参照
+- [真にチラつかないダークモードをついに実現したぞ。実現方法と気付きを書く](https://blog.stin.ink/articles/how-to-implement-a-perfect-dark-mode)
 
-これは、モダンなフロントエンド開発のための最強のスターターテンプレートです。
-GitHubの「Template repository」機能を使って、この構成から素早く新しいプロジェクトを開始できます。
+## 概要
+Reactでのダークモード実装に関するベストプラクティスをまとめいる
 
-## 🚀 特徴 (Tech Stack)
+## ダークモードの実装方法
+### 1. OSによるモード設定を反映する
+メディアクエリー`@media (prefers-color-scheme: dark)`を使用して、ユーザーのOS設定に基づいてダークモードを適用する
+JavaScriptで判定が必要な場合は`matchMedia("prefers-color-scheme: dark")`を使用する
 
-- **Core:** [React 19](https://react.dev/) + [TypeScript](https://www.typescriptlang.org/)
-- **Build Tool:** [Vite](https://vitejs.dev/) (高速ビルド)
-- **Styling:** [Tailwind CSS v4](https://tailwindcss.com/) (CSS-first configuration, Zero-runtime)
-- **Package Manager:** [pnpm](https://pnpm.io/)
-- **Linting & Formatting:**
-  - [ESLint](https://eslint.org/) (Flat Config)
-  - [Prettier](https://prettier.io/)
-  - `prettier-plugin-tailwindcss` (クラス名の自動ソート)
-- **Configuration:**
-  - Path Alias 設定済み (`@/` = `src/`)
+### 2. 独自の設定値を持つ
+OSの設定は使用せず、独自のデータを使う場合
+CSSに反映するには、`data-color-mode="dark"の用にdata属性で設定値を与えておく
+CSS側ではそのdata属性をセレクターとして、ダークモード用のスタイルを指定する
 
-## 🛠️ 必須要件
+### 3. ２つのハイブリッド
+OSの設定を反映するか、OSの設定を無視して強制的にダークモード、またはライトモードするか三択を提供する方法
+指定された設定値は、LocalStorageなどに保存しておく
+OSの設定を反映する場合は、`matchMedia("prefers-color-scheme: dark")`で判定し、html要素に`data-color-mode`属性を設定する。OSの設定を無視したモード選択なら、その選択値を`data-color-mode`属性に設定する
 
-- Node.js (LTS推奨)
-- pnpm
+## ちらつき問題
+2と3の場合、ブラウザでReactが動いてから設定値を反映できる
+SSRの場合、サーバーサイドでHTMLが生成される檀家では属性を決定できない
 
-## 📦 プロジェクトの始め方
+## 解決策
+### script要素の埋め込み
+Reactアプリケーションがマウントされる前に、HTMLのhead内にscript要素を埋め込み、JavaScriptで`data-color-mode`属性を設定する
+script要素は`defer`や`async`をつけない場合、HTMLを上から解釈しているブラウザに見つかった時点で実行され、その間はHTMLの解釈が停止する
+初期表示を遅らせたり存在しないDOMアクセスによるエラーの原因になるので通常は避けるべきだが、逆に利用してhead要素に手書きのscriptを仕込むことで、bodyが解釈される前にhtml要素の`data-color-mode`属性が存在することを保証できる
 
-### 1. このテンプレートからプロジェクトを作成
+例
+```javascript
+<script>
+  (function () {
+    const prefers = window.matchMedia("(prefers-color-scheme: dark)").matches
+      ? "dark"
+      : "light";
+    const fromStorage = localStorage.getItem("stin-blog-color-mode");
+    const colorMode: "light" | "dark" =
+      fromStorage === "system" || fromStorage == null
+        ? prefers
+        : fromStorage === "light"
+          ? "light"
+          : "dark";
+    window.document.documentElement.dataset.colorMode = colorMode;
+  })();
+</script>
+```
+Typescriptは使用できないので、JavaScriptに[トランスパイル](https://www.typescriptlang.org/play/?target=2#code/BQMwrgdgxgLglgewgAmASmQbwFDOVJAZxmQAcAnAUxEvMOQF5kB3OCAEwWYDoBbAQxhQAFgFlK7OP2AAiYBWq1CAWgIAbBOWWERlXpQBcydv3IBrNDLR9BuwrjzIA-MhknzMh3iMy1cAObCMDIA3A4EEMTIIOQIvADKMJr8-pSMyBpQ-GqJyancqTAAkjB6ssRsygBGGv6qCBpavAjslFZheBFR6pqiLYaufoHByAA+ru5mMoxeqDFxueQpaQyrroQAnsR606Pj8wlJS6mMTBBgamoYLgo0dMhGB4vLp0y+AUHTLu-D0z6ToQcrA4XG4nCgYH0EBgYIQEKhMAAomo9JRoWDBPxCJQYT1yH1Wuk8QTKGEAL5odAhIA)したうえで、[minify](https://blog.stin.ink/articles/how-to-implement-a-perfect-dark-mode#:~:text=%E3%81%AE%E5%87%BA%E5%8A%9B%E3%82%92-,Terser%20REPL,-%E3%81%A7minify%E3%81%97)を行って書き込む
 
-GitHubリポジトリ右上の **"Use this template"** ボタンをクリックし、**"Create a new repository"** を選択して新しいリポジトリを作成してください。
+minify結果を、`app/layout.tsx`などのルートレイアウトファイルのhead要素の`dangerouslySetInnerHTML`で埋め込む
+```tsx
+const RootLayout: FC<{ children: ReactNode }> = ({ children }) => {
+  return (
+    <html suppressHydrationWarning lang="ja">
+      <head>
+        {/*
+          TypeScript Playground: https://www.typescriptlang.org/play/?target=2#code/BQMwrgdgxgLglgewgAmASmQbwFDOVJAZxmQAcAnAUxEvMOQF5kB3OCAEwWYDoBbAQxhQAFgFlK7OP2AAiYBWq1CAWgIAbBOWWERlXpQBcydv3IBrNDLR9BuwrjzIA-MhknzMh3iMy1cAObCMDIA3A4EEMTIIOQIvADKMJr8-pSMyBpQ-GqJyancqTAAkjB6ssRsygBGGv6qCBpavAjslFZheBFR6pqiLYaufoHByAA+ru5mMoxeqDFxueQpaQyrroQAnsR606Pj8wlJS6mMTBBgamoYLgo0dMhGB4vLp0y+AUHTLu-D0z6ToQcrA4XG4nCgYH0EBgYIQEKhMAAomo9JRoWDBPxCJQYT1yH1Wuk8QTKGEAL5odAhIA
+          Terser REPL: https://try.terser.org/
+       */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `!function(){const e=window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light",o=localStorage.getItem("stin-blog-color-mode"),t="system"===o||null==o?e:"light"===o?"light":"dark";window.document.documentElement.dataset.colorMode=t}();`,
+          }}
+        />
+      </head>
+      <body>{children}</body>
+    </html>
+  );
+};
 
-### 2. クローンとセットアップ
-
-```bash
-# 作成したリポジトリをクローン
-git clone https://github.com/your-username/your-new-project.git
-cd your-new-project
-
-# 依存関係のインストール
-pnpm install
 ```
 
-### 3. プロジェクト情報の更新（重要）
-
-`package.json` を開き、プロジェクト名を変更してください。
-
-```json
-{
-  "name": "your-project-name", // ←ここを変更
-  "version": "0.0.0",
-  ...
-}
-```
-
-### 4. 開発サーバーの起動
-
-```bash
-pnpm dev
-```
-
-ブラウザで `http://localhost:5173` を開いて確認します。
-
-## 📜 利用可能なスクリプト
-
-| コマンド       | 説明                                         |
-| -------------- | -------------------------------------------- |
-| `pnpm dev`     | 開発サーバーを起動します (HMR有効)           |
-| `pnpm build`   | 本番用にビルドします                         |
-| `pnpm preview` | ビルドした成果物をローカルでプレビューします |
-| `pnpm lint`    | ESLintを実行してコードの問題をチェックします |
-| `pnpm format`  | Prettierを実行してコードを整形します         |
-
-※ コミット時 (`git commit`) に、変更されたファイルに対して自動的に `lint` と `format` が実行されます。エラーがある場合、コミットは中断されます。
-
-## 📂 ディレクトリ構成
-
-```text
-.
-├── public/              # 静的アセット
-├── src/
-│   ├── assets/          # 画像などのアセット
-│   ├── components/      # Reactコンポーネント
-│   ├── App.tsx          # メインコンポーネント
-│   ├── index.css        # Tailwind v4 インポート記述 (@import "tailwindcss";)
-│   ├── main.tsx         # エントリーポイント
-│   └── vite-env.d.ts    # Viteの型定義
-├── .prettierrc          # Prettier設定
-├── eslint.config.js     # ESLint設定
-├── index.html           # HTMLエントリーポイント
-├── package.json         # 依存関係とスクリプト
-├── pnpm-lock.yaml       # ロックファイル
-├── tsconfig.json        # TypeScript設定
-└── vite.config.ts       # Vite設定 (Tailwindプラグイン, Alias設定)
-```
-
-## 🎨 Tailwind CSS v4 の使い方
-
-Tailwind v4では `tailwind.config.js` は不要です。
-CSS変数のカスタマイズなどは `src/index.css` 内で標準的なCSS構文を使って行います。
-
-```css
-@import 'tailwindcss';
-
-@theme {
-  --font-display: 'Satoshi', 'sans-serif';
-  --breakpoint-3xl: 1920px;
-  --color-avocado-100: oklch(0.99 0.03 132.75);
-  --color-avocado-500: oklch(0.84 0.18 117.33);
-}
-```
-
-詳細は [Tailwind CSS v4 Documentation](https://tailwindcss.com/docs) を参照してください。
-
----
-
-Happy Coding! 🚀
+React管理外のスクリプトでHTMLを操作するので、サーバーサイドで生成されたHTMLとhydration実行時のHTMLで`data-color-mode`属性の値が異なる可能性がある
+通常は異常事態となるが、この場合は`suppressHydrationWarning`属性をhtml要素に付与して、Reactのhydration時の警告を抑制する
